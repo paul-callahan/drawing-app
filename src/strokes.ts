@@ -142,6 +142,10 @@ export class StrokeManager {
     return this.strokes.filter(stroke => stroke.layer === layer).length;
   }
 
+  getStrokeById(strokeId: string): Stroke | undefined {
+    return this.strokes.find(s => s.id === strokeId);
+  }
+
   private generateId(): string {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
   }

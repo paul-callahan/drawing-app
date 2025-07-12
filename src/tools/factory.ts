@@ -121,4 +121,10 @@ export class ToolFactory {
       stroke.bounds.maxY = maxY;
     }
   }
+
+  // New method to check if eraser intersects with a stroke
+  static eraserIntersectsWithStroke(eraserStroke: Stroke, targetStroke: Stroke): boolean {
+    if (eraserStroke.tool !== 'eraser') return false;
+    return EraserTool.intersectsWithStroke(eraserStroke, targetStroke);
+  }
 } 

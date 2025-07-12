@@ -1,4 +1,4 @@
-// eraser.ts: Eraser tool implementation
+// eraser.ts: Eraser tool implementation - deletes entire objects
 
 import { EraserStroke, StrokePoint, RenderContext } from '../types';
 
@@ -36,36 +36,9 @@ export class EraserTool {
   }
 
   static render(stroke: EraserStroke, context: RenderContext): void {
-    if (stroke.points.length < 2) return;
-
-    const { ctx, offsetX, offsetY } = context;
-
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.strokeStyle = 'rgba(0,0,0,1)';
-
-    ctx.beginPath();
-    
-    // Draw the eraser path
-    for (let i = 0; i < stroke.points.length; i++) {
-      const point = stroke.points[i];
-      const x = point.x - offsetX;
-      const y = point.y - offsetY;
-      
-      if (i === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        // Calculate line width based on pressure
-        const lineWidth = stroke.brushSize * point.pressure;
-        ctx.lineWidth = Math.max(1, lineWidth);
-        ctx.lineTo(x, y);
-      }
-    }
-    
-    ctx.stroke();
-    ctx.restore();
+    // Eraser strokes are not rendered - they work invisibly
+    // The eraser only deletes objects, it doesn't leave visual traces
+    return;
   }
 
   static isPointInStroke(stroke: EraserStroke, x: number, y: number): boolean {
@@ -76,6 +49,41 @@ export class EraserTool {
         return true;
       }
     }
+    return false;
+  }
+
+  // New method to check if eraser stroke intersects with another stroke
+  static intersectsWithStroke(eraserStroke: EraserStroke, targetStroke: any): boolean {
+    // Check if any point in the eraser stroke is close to the target stroke
+    for (const eraserPoint of eraserStroke.points) {
+      if (this.isPointNearStroke(eraserPoint, targetStroke)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static isPointNearStroke(point: StrokePoint, stroke: any): boolean {
+    // For rectangle strokes, check if point is inside or near the rectangle
+    if (stroke.tool === 'rectangle' && stroke.rectangle) {
+      const rect = stroke.rectangle;
+      const margin = stroke.brushSize || 10; // Add some margin for easier selection
+      
+      return point.x >= rect.x - margin && 
+             point.x <= rect.x + rect.width + margin &&
+             point.y >= rect.y - margin && 
+             point.y <= rect.y + rect.height + margin;
+    }
+    
+    // For pen/eraser strokes, check if point is near any stroke point
+    for (const strokePoint of stroke.points) {
+      const distance = Math.sqrt((point.x - strokePoint.x) ** 2 + (point.y - strokePoint.y) ** 2);
+      const threshold = Math.max(stroke.brushSize || 10, 10); // Use stroke brush size or minimum threshold
+      if (distance <= threshold) {
+        return true;
+      }
+    }
+    
     return false;
   }
 } 

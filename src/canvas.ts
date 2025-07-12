@@ -3,6 +3,7 @@
 import { StrokeManager } from './strokes';
 import { SelectionManager } from './selection';
 import { ToolFactory } from './tools/factory';
+import { EraserTool } from './tools/eraser';
 
 export interface CanvasState {
   isDrawing: boolean;
@@ -324,7 +325,26 @@ export function createStroke(): string {
 
 export function addPointToCurrentStroke(x: number, y: number, pressure: number): void {
   if (state.currentStrokeId) {
-    strokeManager.addPointToStroke(state.currentStrokeId, x, y, pressure);
+    // For eraser tool, don't add points to the stroke list - just check for deletion
+    if (state.currentTool === 'eraser') {
+      checkEraserObjectDeletion(x, y);
+    } else {
+      strokeManager.addPointToStroke(state.currentStrokeId, x, y, pressure);
+    }
+  }
+}
+
+function checkEraserObjectDeletion(x: number, y: number): void {
+  // Get all strokes in the current viewport
+  const strokes = strokeManager.getStrokesInViewport(state.offsetX, state.offsetY, canvas.width, canvas.height);
+  
+  // Check each stroke for intersection with the current eraser position
+  for (const stroke of strokes) {
+    if (isPointInStroke(stroke, x, y)) {
+      // Delete the stroke that the eraser is touching
+      strokeManager.deleteStroke(stroke.id);
+      console.log(`Deleted stroke ${stroke.id} with eraser`);
+    }
   }
 }
 
