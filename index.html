@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Drawing App</title>
+    <script type="module" crossorigin src="/assets/index-z8pxubyF.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-C6NI7NzZ.css">
+  </head>
+
+  <body>
+    <div class="app-container">
+      <header class="toolbar">
+        <div class="tool-group">
+          <button id="pen-tool" class="tool-btn active" title="Pen Tool">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 19l7-7 3 3-7 7-3-3z"/>
+              <path d="M18 13l-1.5-1.5L12 19l-3-3 4.5-4.5L18 13z"/>
+            </svg>
+          </button>
+          <button id="eraser-tool" class="tool-btn" title="Eraser">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13L11 20L4 13L11 6L18 13Z"/>
+              <path d="M22 22L16 16"/>
+            </svg>
+          </button>
+        </div>
+        
+        <div class="tool-group">
+          <label for="brush-size">Size:</label>
+          <input type="range" id="brush-size" min="1" max="50" value="5" class="slider">
+          <span id="brush-size-value">5</span>
+        </div>
+        
+        <div class="tool-group">
+          <label for="brush-color">Color:</label>
+          <input type="color" id="brush-color" value="#000000" class="color-picker">
+        </div>
+        
+        <div class="tool-group">
+          <label for="pressure-sensitivity">Pressure:</label>
+          <input type="checkbox" id="pressure-sensitivity" checked>
+        </div>
+        
+        <div class="tool-group">
+          <button id="clear-canvas" class="action-btn" title="Clear Canvas">Clear</button>
+          <button id="save-image" class="action-btn" title="Save Image">Save</button>
+        </div>
+      </header>
+      
+      <main class="canvas-container">
+        <canvas id="drawing-canvas" width="1200" height="800"></canvas>
+        <div class="canvas-overlay">
+          <div class="pressure-indicator" id="pressure-indicator">
+            <div class="pressure-bar"></div>
+          </div>
+        </div>
+      </main>
+      
+      <footer class="status-bar">
+        <span id="coordinates">X: 0, Y: 0</span>
+        <span id="pressure-value">Pressure: 0%</span>
+        <span id="tool-info">Pen Tool</span>
+      </footer>
+    </div>
+  </body>
+</html>
