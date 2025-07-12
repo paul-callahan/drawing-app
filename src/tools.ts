@@ -2,7 +2,7 @@
 
 import { state } from './canvas';
 
-export function setTool(tool: 'pen' | 'eraser' | 'rectangle'): void {
+export function setTool(tool: 'pen' | 'eraser' | 'rectangle' | 'selection'): void {
   state.currentTool = tool;
 }
 

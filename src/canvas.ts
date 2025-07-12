@@ -1,6 +1,8 @@
 // canvas.ts: Canvas state and rendering with stroke-based objects
 
 import { StrokeManager } from './strokes';
+import { SelectionManager } from './selection';
+import { ToolFactory } from './tools/factory';
 
 export interface CanvasState {
   isDrawing: boolean;
@@ -8,7 +10,7 @@ export interface CanvasState {
   lastY: number;
   pressure: number;
   pressureSensitivity: boolean;
-  currentTool: 'pen' | 'eraser' | 'rectangle';
+  currentTool: 'pen' | 'eraser' | 'rectangle' | 'selection';
   brushSize: number;
   brushColor: string;
   offsetX: number;
@@ -44,6 +46,7 @@ export const state: CanvasState = {
 };
 
 export const strokeManager = new StrokeManager();
+export const selectionManager = new SelectionManager();
 
 // Canvas element
 let canvas: HTMLCanvasElement;
@@ -76,6 +79,9 @@ export function redrawViewport(): void {
   if (state.isDrawingRectangle) {
     drawElasticBand();
   }
+  
+  // Draw selection outline and handles
+  drawSelection();
 }
 
 function drawElasticBand(): void {
@@ -101,8 +107,62 @@ function drawElasticBand(): void {
   ctx.restore();
 }
 
+function drawSelection(): void {
+  const selectedStroke = selectionManager.getSelectedStroke();
+  if (!selectedStroke) return;
+  
+  // Draw selection outline
+  drawSelectionOutline(selectedStroke);
+  
+  // Draw transform handles
+  drawTransformHandles();
+}
+
+function drawSelectionOutline(stroke: any): void {
+  if (!ctx) return;
+  
+  ctx.save();
+  ctx.strokeStyle = '#007AFF';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]);
+  ctx.globalAlpha = 0.8;
+  
+  const bounds = stroke.bounds;
+  const x = bounds.minX - state.offsetX;
+  const y = bounds.minY - state.offsetY;
+  const width = bounds.maxX - bounds.minX;
+  const height = bounds.maxY - bounds.minY;
+  
+  ctx.strokeRect(x, y, width, height);
+  ctx.restore();
+}
+
+function drawTransformHandles(): void {
+  if (!ctx) return;
+  
+  const handles = selectionManager.getTransformHandles(state.offsetX, state.offsetY);
+  
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#007AFF';
+  ctx.lineWidth = 2;
+  
+  for (const handle of handles) {
+    const size = handle.size;
+    const x = handle.x - size/2;
+    const y = handle.y - size/2;
+    
+    // Draw handle
+    ctx.fillRect(x, y, size, size);
+    ctx.strokeRect(x, y, size, size);
+  }
+  
+  ctx.restore();
+}
+
 export function clearCanvas(): void {
   strokeManager.clearCanvas();
+  selectionManager.clearSelection();
   redrawViewport();
 }
 
@@ -127,6 +187,26 @@ export function getVirtualCoordinates(event: MouseEvent | TouchEvent | PointerEv
     x: canvasX + state.offsetX,
     y: canvasY + state.offsetY
   };
+}
+
+export function getCanvasCoordinates(event: MouseEvent | TouchEvent | PointerEvent): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect();
+  let clientX: number, clientY: number;
+  
+  if ('touches' in event && event.touches.length > 0) {
+    clientX = event.touches[0].clientX;
+    clientY = event.touches[0].clientY;
+  } else if ('clientX' in event) {
+    clientX = event.clientX;
+    clientY = event.clientY;
+  } else {
+    return { x: 0, y: 0 };
+  }
+  
+  const canvasX = (clientX - rect.left) * (canvas.width / rect.width);
+  const canvasY = (clientY - rect.top) * (canvas.height / rect.height);
+  
+  return { x: canvasX, y: canvasY };
 }
 
 export function getPressure(event: PointerEvent): number {
@@ -228,8 +308,13 @@ export function deleteLayer(layer: number): void {
 
 // Stroke management functions
 export function createStroke(): string {
+  if (state.currentTool === 'selection') {
+    // Don't create strokes for selection tool
+    return '';
+  }
+  
   const stroke = strokeManager.createStroke(
-    state.currentTool,
+    state.currentTool as 'pen' | 'eraser' | 'rectangle',
     state.brushColor,
     state.brushSize
   );
@@ -302,4 +387,31 @@ export function finishRectangle(): void {
   state.rectangleEndY = 0;
   
   redrawViewport();
+}
+
+// Selection management functions
+export function selectStrokeAtPoint(x: number, y: number): void {
+  const strokes = strokeManager.getStrokesInViewport(state.offsetX, state.offsetY, canvas.width, canvas.height);
+  
+  // Find the topmost stroke at the point
+  for (let i = strokes.length - 1; i >= 0; i--) {
+    const stroke = strokes[i];
+    if (isPointInStroke(stroke, x, y)) {
+      selectionManager.selectStroke(stroke);
+      redrawViewport();
+      return;
+    }
+  }
+  
+  // No stroke found, clear selection
+  selectionManager.clearSelection();
+  redrawViewport();
+}
+
+function isPointInStroke(stroke: any, x: number, y: number): boolean {
+  return ToolFactory.isPointInStroke(stroke, x, y);
+}
+
+export function getSelectionManager(): SelectionManager {
+  return selectionManager;
 } 

@@ -1,0 +1,33 @@
+/* Add cursor styles for selection tool */
+.drawing-canvas.selection-mode {
+  cursor: crosshair;
+}
+
+.drawing-canvas.selection-mode.moving {
+  cursor: move;
+}
+
+.drawing-canvas.selection-mode.resizing {
+  cursor: nw-resize;
+}
+
+/* Transform handle cursor styles */
+.drawing-canvas.selection-mode .transform-handle {
+  cursor: pointer;
+}
+
+.drawing-canvas.selection-mode .transform-handle.top-left {
+  cursor: nw-resize;
+}
+
+.drawing-canvas.selection-mode .transform-handle.top-right {
+  cursor: ne-resize;
+}
+
+.drawing-canvas.selection-mode .transform-handle.bottom-left {
+  cursor: sw-resize;
+}
+
+.drawing-canvas.selection-mode .transform-handle.bottom-right {
+  cursor: se-resize;
+} 

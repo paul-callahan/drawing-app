@@ -4,6 +4,7 @@
 export const penTool = document.getElementById('pen-tool') as HTMLButtonElement;
 export const eraserTool = document.getElementById('eraser-tool') as HTMLButtonElement;
 export const rectangleTool = document.getElementById('rectangle-tool') as HTMLButtonElement;
+export const selectionTool = document.getElementById('selection-tool') as HTMLButtonElement;
 
 // Brush controls
 export const brushSizeSlider = document.getElementById('brush-size') as HTMLInputElement;

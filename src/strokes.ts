@@ -1,36 +1,9 @@
 // strokes.ts: Stroke object management with layers and z-ordering
 
-export interface StrokePoint {
-  x: number;
-  y: number;
-  pressure: number;
-  timestamp: number;
-}
+import { Stroke, RenderContext } from './types';
+import { ToolFactory } from './tools/factory';
 
-export interface Rectangle {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface Stroke {
-  id: string;
-  points: StrokePoint[];
-  tool: 'pen' | 'eraser' | 'rectangle';
-  color: string;
-  brushSize: number;
-  layer: number;
-  zIndex: number;
-  bounds: {
-    minX: number;
-    minY: number;
-    maxX: number;
-    maxY: number;
-  };
-  // Rectangle-specific properties
-  rectangle?: Rectangle;
-}
+export type { Stroke } from './types';
 
 export class StrokeManager {
   private strokes: Stroke[] = [];
@@ -44,37 +17,30 @@ export class StrokeManager {
   }
 
   createStroke(tool: 'pen' | 'eraser' | 'rectangle', color: string, brushSize: number): Stroke {
-    const stroke: Stroke = {
-      id: this.generateId(),
-      points: [],
+    const stroke = ToolFactory.createStroke(
       tool,
+      this.generateId(),
       color,
       brushSize,
-      layer: this.currentLayer,
-      zIndex: this.nextZIndex++,
-      bounds: { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
-    };
+      this.currentLayer,
+      this.nextZIndex++
+    );
     this.strokes.push(stroke);
     return stroke;
   }
 
   createRectangle(x: number, y: number, width: number, height: number, color: string, brushSize: number): Stroke {
-    const stroke: Stroke = {
-      id: this.generateId(),
-      points: [],
-      tool: 'rectangle',
+    const stroke = ToolFactory.createRectangle(
+      this.generateId(),
+      x,
+      y,
+      width,
+      height,
       color,
       brushSize,
-      layer: this.currentLayer,
-      zIndex: this.nextZIndex++,
-      bounds: { 
-        minX: Math.min(x, x + width), 
-        minY: Math.min(y, y + height), 
-        maxX: Math.max(x, x + width), 
-        maxY: Math.max(y, y + height) 
-      },
-      rectangle: { x, y, width, height }
-    };
+      this.currentLayer,
+      this.nextZIndex++
+    );
     this.strokes.push(stroke);
     return stroke;
   }
@@ -83,22 +49,7 @@ export class StrokeManager {
     const stroke = this.strokes.find(s => s.id === strokeId);
     if (!stroke) return;
 
-    const point: StrokePoint = {
-      x,
-      y,
-      pressure,
-      timestamp: Date.now()
-    };
-
-    stroke.points.push(point);
-    this.updateStrokeBounds(stroke, x, y);
-  }
-
-  private updateStrokeBounds(stroke: Stroke, x: number, y: number): void {
-    stroke.bounds.minX = Math.min(stroke.bounds.minX, x);
-    stroke.bounds.minY = Math.min(stroke.bounds.minY, y);
-    stroke.bounds.maxX = Math.max(stroke.bounds.maxX, x);
-    stroke.bounds.maxY = Math.max(stroke.bounds.maxY, y);
+    ToolFactory.addPoint(stroke, x, y, pressure);
   }
 
   getStrokesInViewport(viewportX: number, viewportY: number, viewportWidth: number, viewportHeight: number): Stroke[] {
@@ -128,69 +79,8 @@ export class StrokeManager {
   }
 
   renderStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, offsetX: number, offsetY: number): void {
-    if (stroke.tool === 'rectangle' && stroke.rectangle) {
-      this.renderRectangle(ctx, stroke, offsetX, offsetY);
-    } else if (stroke.points.length >= 2) {
-      this.renderPath(ctx, stroke, offsetX, offsetY);
-    }
-  }
-
-  private renderPath(ctx: CanvasRenderingContext2D, stroke: Stroke, offsetX: number, offsetY: number): void {
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    if (stroke.tool === 'eraser') {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.strokeStyle = 'rgba(0,0,0,1)';
-    } else {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = stroke.color;
-    }
-
-    ctx.beginPath();
-    
-    // Draw the stroke path
-    for (let i = 0; i < stroke.points.length; i++) {
-      const point = stroke.points[i];
-      const x = point.x - offsetX;
-      const y = point.y - offsetY;
-      
-      if (i === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        // Calculate line width based on pressure
-        const lineWidth = stroke.brushSize * point.pressure;
-        ctx.lineWidth = Math.max(1, lineWidth);
-        ctx.lineTo(x, y);
-      }
-    }
-    
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  private renderRectangle(ctx: CanvasRenderingContext2D, stroke: Stroke, offsetX: number, offsetY: number): void {
-    if (!stroke.rectangle) return;
-
-    ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
-    
-    const rect = stroke.rectangle;
-    const x = rect.x - offsetX;
-    const y = rect.y - offsetY;
-    
-    // Set stroke style only (no fill)
-    ctx.strokeStyle = stroke.color;
-    ctx.lineWidth = stroke.brushSize;
-    
-    // Draw rounded rectangle outline
-    ctx.beginPath();
-    const radius = Math.min(rect.width, rect.height) * 0.1; // 10% of smaller dimension
-    ctx.roundRect(x, y, rect.width, rect.height, radius);
-    ctx.stroke();
-    
-    ctx.restore();
+    const context: RenderContext = { ctx, offsetX, offsetY };
+    ToolFactory.render(stroke, context);
   }
 
   renderViewport(ctx: CanvasRenderingContext2D, viewportX: number, viewportY: number, viewportWidth: number, viewportHeight: number): void {
@@ -244,15 +134,15 @@ export class StrokeManager {
     }
   }
 
-  private generateId(): string {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
-  }
-
   getStrokeCount(): number {
     return this.strokes.length;
   }
 
   getLayerStrokeCount(layer: number): number {
-    return this.strokes.filter(s => s.layer === layer).length;
+    return this.strokes.filter(stroke => stroke.layer === layer).length;
+  }
+
+  private generateId(): string {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
   }
 } 

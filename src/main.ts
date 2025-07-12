@@ -3,6 +3,7 @@ import {
   redrawViewport,
   clearCanvas,
   getVirtualCoordinates,
+  getCanvasCoordinates,
   getPressure,
   onScroll,
   saveViewportAsImage,
@@ -17,7 +18,9 @@ import {
   strokeManager,
   startRectangle,
   updateRectangle,
-  finishRectangle
+  finishRectangle,
+  selectStrokeAtPoint,
+  getSelectionManager
 } from './canvas';
 import {
   setTool,
@@ -29,6 +32,7 @@ import {
   penTool,
   eraserTool,
   rectangleTool,
+  selectionTool,
   brushSizeSlider,
   brushSizeValue,
   brushColorPicker,
@@ -47,11 +51,17 @@ import {
 } from './ui';
 import { saveImage as platformSaveImage } from './platform';
 
+const selectionManager = getSelectionManager();
+
 // Drawing logic with stroke objects
 function startDrawing(event: MouseEvent | TouchEvent | PointerEvent) {
   const coords = getVirtualCoordinates(event);
+  const canvasCoords = getCanvasCoordinates(event);
   
-  if (state.currentTool === 'rectangle') {
+  if (state.currentTool === 'selection') {
+    // Handle selection tool
+    handleSelectionStart(canvasCoords.x, canvasCoords.y);
+  } else if (state.currentTool === 'rectangle') {
     // Start rectangle drawing
     startRectangle(coords.x, coords.y);
     state.isDrawing = true;
@@ -74,14 +84,38 @@ function startDrawing(event: MouseEvent | TouchEvent | PointerEvent) {
   }
 }
 
+function handleSelectionStart(x: number, y: number): void {
+  // Check if clicking on a transform handle
+  const handle = selectionManager.isPointInHandle(x, y, state.offsetX, state.offsetY);
+  if (handle) {
+    selectionManager.startResize(handle, x + state.offsetX, y + state.offsetY);
+    state.isDrawing = true;
+    return;
+  }
+  
+  // Check if clicking on selected object for moving
+  if (selectionManager.isPointInSelection(x, y, state.offsetX, state.offsetY)) {
+    selectionManager.startMove(x + state.offsetX, y + state.offsetY);
+    state.isDrawing = true;
+    return;
+  }
+  
+  // Try to select an object at the point
+  selectStrokeAtPoint(x + state.offsetX, y + state.offsetY);
+}
+
 function draw(event: MouseEvent | TouchEvent | PointerEvent) {
   if (!state.isDrawing) return;
   
   const coords = getVirtualCoordinates(event);
+  const canvasCoords = getCanvasCoordinates(event);
   const currentX = coords.x;
   const currentY = coords.y;
   
-  if (state.currentTool === 'rectangle') {
+  if (state.currentTool === 'selection') {
+    // Handle selection tool updates
+    handleSelectionUpdate(canvasCoords.x, canvasCoords.y);
+  } else if (state.currentTool === 'rectangle') {
     // Update rectangle preview
     updateRectangle(currentX, currentY);
   } else {
@@ -108,10 +142,27 @@ function draw(event: MouseEvent | TouchEvent | PointerEvent) {
   updateCoordinates(viewportX, viewportY);
 }
 
+function handleSelectionUpdate(x: number, y: number): void {
+  if (selectionManager.isMoving()) {
+    selectionManager.updateMove(x + state.offsetX, y + state.offsetY);
+    redrawViewport();
+  } else if (selectionManager.isResizing()) {
+    selectionManager.updateResize(x + state.offsetX, y + state.offsetY);
+    redrawViewport();
+  }
+}
+
 function stopDrawing() {
   if (!state.isDrawing) return;
   
-  if (state.currentTool === 'rectangle') {
+  if (state.currentTool === 'selection') {
+    // Handle selection tool end
+    if (selectionManager.isMoving()) {
+      selectionManager.stopMove();
+    } else if (selectionManager.isResizing()) {
+      selectionManager.stopResize();
+    }
+  } else if (state.currentTool === 'rectangle') {
     // Finish rectangle drawing
     finishRectangle();
   } else {
@@ -164,14 +215,17 @@ function setupEventListeners() {
   initCanvas(canvas);
   
   canvas.addEventListener('mousedown', startDrawing);
-  canvas.addEventListener('mousemove', draw);
+  canvas.addEventListener('mousemove', (e) => {
+    draw(e);
+    updateCursor(e);
+  });
   canvas.addEventListener('mouseup', stopDrawing);
   canvas.addEventListener('mouseout', stopDrawing);
   canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e); });
   canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); });
   canvas.addEventListener('touchend', stopDrawing);
   canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); startDrawing(e); });
-  canvas.addEventListener('pointermove', (e) => { e.preventDefault(); draw(e); });
+  canvas.addEventListener('pointermove', (e) => { e.preventDefault(); draw(e); updateCursor(e); });
   canvas.addEventListener('pointerup', stopDrawing);
   canvas.addEventListener('pointerleave', stopDrawing);
   canvas.addEventListener('wheel', onScroll, { passive: false });
@@ -181,21 +235,36 @@ function setupEventListeners() {
     penTool.classList.add('active');
     eraserTool.classList.remove('active');
     rectangleTool.classList.remove('active');
+    selectionTool.classList.remove('active');
     updateToolInfo('Pen Tool');
+    updateCanvasCursor('default');
   });
   eraserTool.addEventListener('click', () => {
     setTool('eraser');
     eraserTool.classList.add('active');
     penTool.classList.remove('active');
     rectangleTool.classList.remove('active');
+    selectionTool.classList.remove('active');
     updateToolInfo('Eraser Tool');
+    updateCanvasCursor('default');
   });
   rectangleTool.addEventListener('click', () => {
     setTool('rectangle');
     rectangleTool.classList.add('active');
     penTool.classList.remove('active');
     eraserTool.classList.remove('active');
+    selectionTool.classList.remove('active');
     updateToolInfo('Rectangle Tool');
+    updateCanvasCursor('crosshair');
+  });
+  selectionTool.addEventListener('click', () => {
+    setTool('selection');
+    selectionTool.classList.add('active');
+    penTool.classList.remove('active');
+    eraserTool.classList.remove('active');
+    rectangleTool.classList.remove('active');
+    updateToolInfo('Selection Tool');
+    updateCanvasCursor('crosshair');
   });
   brushSizeSlider.addEventListener('input', () => {
     setBrushSize(parseInt(brushSizeSlider.value));
@@ -232,6 +301,9 @@ function setupEventListeners() {
       case 'r': case 'R':
         if (e.ctrlKey || e.metaKey) { e.preventDefault(); rectangleTool.click(); }
         break;
+      case 'v': case 'V':
+        if (e.ctrlKey || e.metaKey) { e.preventDefault(); selectionTool.click(); }
+        break;
       case 'Delete': case 'Backspace':
         if (e.ctrlKey || e.metaKey) { e.preventDefault(); clearCanvas(); }
         break;
@@ -242,13 +314,46 @@ function setupEventListeners() {
   });
 }
 
+function updateCursor(event: MouseEvent | TouchEvent | PointerEvent): void {
+  if (state.currentTool !== 'selection') return;
+  
+  const canvasCoords = getCanvasCoordinates(event);
+  const canvas = document.getElementById('drawing-canvas') as HTMLCanvasElement;
+  
+  // Remove all cursor classes
+  canvas.classList.remove('selection-mode', 'moving', 'resizing');
+  
+  if (selectionManager.isMoving()) {
+    canvas.classList.add('selection-mode', 'moving');
+  } else if (selectionManager.isResizing()) {
+    canvas.classList.add('selection-mode', 'resizing');
+  } else {
+    // Check if hovering over transform handle
+    const handle = selectionManager.isPointInHandle(canvasCoords.x, canvasCoords.y, state.offsetX, state.offsetY);
+    if (handle) {
+      canvas.classList.add('selection-mode');
+      // Add specific handle cursor class
+      canvas.classList.add(`transform-handle-${handle.type.replace('-', '-')}`);
+    } else if (selectionManager.isPointInSelection(canvasCoords.x, canvasCoords.y, state.offsetX, state.offsetY)) {
+      canvas.classList.add('selection-mode', 'moving');
+    } else {
+      canvas.classList.add('selection-mode');
+    }
+  }
+}
+
+function updateCanvasCursor(cursor: string): void {
+  const canvas = document.getElementById('drawing-canvas') as HTMLCanvasElement;
+  canvas.style.cursor = cursor;
+}
+
 function init() {
   redrawViewport();
   setupEventListeners();
   updateToolInfo('Pen Tool');
   updateLayerSelect(getLayers(), getCurrentLayer());
   updateStrokeCount(strokeManager.getStrokeCount());
-  console.log('Drawing app initialized with stroke-based objects, layers, and rectangle tool.');
+  console.log('Drawing app initialized with stroke-based objects, layers, rectangle tool, and selection tool.');
 }
 
 window.addEventListener('DOMContentLoaded', init);
