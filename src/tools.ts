@@ -1,19 +1,19 @@
 // tools.ts: Tool state and switching
-import { state, redrawViewport } from './canvas';
 
-export function setTool(tool: 'pen' | 'eraser') {
+import { state } from './canvas';
+
+export function setTool(tool: 'pen' | 'eraser' | 'rectangle'): void {
   state.currentTool = tool;
-  redrawViewport();
 }
 
-export function setBrushSize(size: number) {
+export function setBrushSize(size: number): void {
   state.brushSize = size;
 }
 
-export function setBrushColor(color: string) {
+export function setBrushColor(color: string): void {
   state.brushColor = color;
 }
 
-export function setPressureSensitivity(enabled: boolean) {
+export function setPressureSensitivity(enabled: boolean): void {
   state.pressureSensitivity = enabled;
 } 

@@ -6,7 +6,18 @@ import {
   getPressure,
   onScroll,
   saveViewportAsImage,
-  tileManager
+  initCanvas,
+  createStroke,
+  addPointToCurrentStroke,
+  finishStroke,
+  setCurrentLayer,
+  getCurrentLayer,
+  getLayers,
+  deleteLayer,
+  strokeManager,
+  startRectangle,
+  updateRectangle,
+  finishRectangle
 } from './canvas';
 import {
   setTool,
@@ -17,94 +28,102 @@ import {
 import {
   penTool,
   eraserTool,
+  rectangleTool,
   brushSizeSlider,
   brushSizeValue,
   brushColorPicker,
   pressureSensitivityCheckbox,
   clearCanvasBtn,
   saveImageBtn,
+  layerSelect,
+  addLayerBtn,
+  deleteLayerBtn,
   updateCoordinates,
   updatePressureIndicator,
-  updateToolInfo
+  updateToolInfo,
+  updateStrokeCount,
+  updateLayerSelect,
+  getSelectedLayer
 } from './ui';
-import { TILE_SIZE } from './tiles';
 import { saveImage as platformSaveImage } from './platform';
 
-// Drawing logic with tiles
+// Drawing logic with stroke objects
 function startDrawing(event: MouseEvent | TouchEvent | PointerEvent) {
-  state.isDrawing = true;
   const coords = getVirtualCoordinates(event);
-  state.lastX = coords.x;
-  state.lastY = coords.y;
-  if ('pressure' in event) {
-    state.pressure = getPressure(event as PointerEvent);
-    updatePressureIndicator(state.pressure, state.pressureSensitivity);
+  
+  if (state.currentTool === 'rectangle') {
+    // Start rectangle drawing
+    startRectangle(coords.x, coords.y);
+    state.isDrawing = true;
+  } else {
+    // Start stroke drawing
+    state.isDrawing = true;
+    state.lastX = coords.x;
+    state.lastY = coords.y;
+    
+    // Create a new stroke
+    createStroke();
+    
+    if ('pressure' in event) {
+      state.pressure = getPressure(event as PointerEvent);
+      updatePressureIndicator(state.pressure, state.pressureSensitivity);
+    }
+    
+    // Add the first point to the stroke
+    addPointToCurrentStroke(coords.x, coords.y, state.pressure);
   }
 }
 
 function draw(event: MouseEvent | TouchEvent | PointerEvent) {
   if (!state.isDrawing) return;
+  
   const coords = getVirtualCoordinates(event);
   const currentX = coords.x;
   const currentY = coords.y;
-  let pressure = 0.5;
-  if ('pressure' in event) {
-    pressure = getPressure(event as PointerEvent);
-    state.pressure = pressure;
-    updatePressureIndicator(pressure, state.pressureSensitivity);
+  
+  if (state.currentTool === 'rectangle') {
+    // Update rectangle preview
+    updateRectangle(currentX, currentY);
+  } else {
+    // Continue stroke drawing
+    let pressure = 0.5;
+    if ('pressure' in event) {
+      pressure = getPressure(event as PointerEvent);
+      state.pressure = pressure;
+      updatePressureIndicator(pressure, state.pressureSensitivity);
+    }
+    
+    // Add point to current stroke
+    addPointToCurrentStroke(currentX, currentY, pressure);
+    
+    state.lastX = currentX;
+    state.lastY = currentY;
+    
+    // Redraw to show the stroke as it's being drawn
+    redrawViewport();
   }
-  let lineWidth = state.brushSize;
-  if (state.pressureSensitivity && pressure > 0) {
-    lineWidth = state.brushSize * pressure;
-  }
-  // Draw the line on all affected tiles
-  drawLineOnTiles(state.lastX, state.lastY, currentX, currentY, lineWidth, state.currentTool, state.brushColor);
-  state.lastX = currentX;
-  state.lastY = currentY;
+  
   const viewportX = currentX - state.offsetX;
   const viewportY = currentY - state.offsetY;
   updateCoordinates(viewportX, viewportY);
-  redrawViewport();
 }
 
 function stopDrawing() {
-  state.isDrawing = false;
-  updatePressureIndicator(0, false);
-}
-
-function drawLineOnTiles(x0: number, y0: number, x1: number, y1: number, lineWidth: number, tool: 'pen' | 'eraser', color: string) {
-  // Find all tiles the line crosses (Bresenham's-style, but for tiles)
-  const minTx = Math.floor(Math.min(x0, x1) / TILE_SIZE);
-  const maxTx = Math.floor(Math.max(x0, x1) / TILE_SIZE);
-  const minTy = Math.floor(Math.min(y0, y1) / TILE_SIZE);
-  const maxTy = Math.floor(Math.max(y0, y1) / TILE_SIZE);
-  for (let ty = minTy; ty <= maxTy; ty++) {
-    for (let tx = minTx; tx <= maxTx; tx++) {
-      // Compute local coordinates in this tile
-      const tileCtx = tileManager.getTileCtx(tx, ty);
-      tileCtx.save();
-      tileCtx.lineCap = 'round';
-      tileCtx.lineJoin = 'round';
-      tileCtx.lineWidth = Math.max(1, lineWidth);
-      if (tool === 'eraser') {
-        tileCtx.globalCompositeOperation = 'destination-out';
-        tileCtx.strokeStyle = 'rgba(0,0,0,1)';
-      } else {
-        tileCtx.globalCompositeOperation = 'source-over';
-        tileCtx.strokeStyle = color;
-      }
-      tileCtx.beginPath();
-      // Clip the line to the tile bounds
-      const lx0 = x0 - tx * TILE_SIZE;
-      const ly0 = y0 - ty * TILE_SIZE;
-      const lx1 = x1 - tx * TILE_SIZE;
-      const ly1 = y1 - ty * TILE_SIZE;
-      tileCtx.moveTo(lx0, ly0);
-      tileCtx.lineTo(lx1, ly1);
-      tileCtx.stroke();
-      tileCtx.restore();
-    }
+  if (!state.isDrawing) return;
+  
+  if (state.currentTool === 'rectangle') {
+    // Finish rectangle drawing
+    finishRectangle();
+  } else {
+    // Finish stroke drawing
+    updatePressureIndicator(0, false);
+    finishStroke();
   }
+  
+  state.isDrawing = false;
+  
+  // Update stroke count
+  updateStrokeCount(strokeManager.getStrokeCount());
 }
 
 async function saveImage() {
@@ -117,8 +136,33 @@ async function saveImage() {
   }
 }
 
+function addNewLayer() {
+  const layers = getLayers();
+  const newLayer = Math.max(...layers) + 1;
+  setCurrentLayer(newLayer);
+  updateLayerSelect(getLayers(), getCurrentLayer());
+}
+
+function deleteCurrentLayer() {
+  const currentLayer = getCurrentLayer();
+  if (currentLayer === 0) {
+    alert('Cannot delete the default layer (Layer 0)');
+    return;
+  }
+  
+  if (confirm(`Delete Layer ${currentLayer} and all its strokes?`)) {
+    deleteLayer(currentLayer);
+    updateLayerSelect(getLayers(), getCurrentLayer());
+    updateStrokeCount(strokeManager.getStrokeCount());
+  }
+}
+
 function setupEventListeners() {
   const canvas = document.getElementById('drawing-canvas') as HTMLCanvasElement;
+  
+  // Initialize canvas
+  initCanvas(canvas);
+  
   canvas.addEventListener('mousedown', startDrawing);
   canvas.addEventListener('mousemove', draw);
   canvas.addEventListener('mouseup', stopDrawing);
@@ -136,13 +180,22 @@ function setupEventListeners() {
     setTool('pen');
     penTool.classList.add('active');
     eraserTool.classList.remove('active');
+    rectangleTool.classList.remove('active');
     updateToolInfo('Pen Tool');
   });
   eraserTool.addEventListener('click', () => {
     setTool('eraser');
     eraserTool.classList.add('active');
     penTool.classList.remove('active');
+    rectangleTool.classList.remove('active');
     updateToolInfo('Eraser Tool');
+  });
+  rectangleTool.addEventListener('click', () => {
+    setTool('rectangle');
+    rectangleTool.classList.add('active');
+    penTool.classList.remove('active');
+    eraserTool.classList.remove('active');
+    updateToolInfo('Rectangle Tool');
   });
   brushSizeSlider.addEventListener('input', () => {
     setBrushSize(parseInt(brushSizeSlider.value));
@@ -154,7 +207,19 @@ function setupEventListeners() {
   pressureSensitivityCheckbox.addEventListener('change', () => {
     setPressureSensitivity(pressureSensitivityCheckbox.checked);
   });
-  clearCanvasBtn.addEventListener('click', clearCanvas);
+  
+  // Layer controls
+  layerSelect.addEventListener('change', () => {
+    const selectedLayer = getSelectedLayer();
+    setCurrentLayer(selectedLayer);
+  });
+  addLayerBtn.addEventListener('click', addNewLayer);
+  deleteLayerBtn.addEventListener('click', deleteCurrentLayer);
+  
+  clearCanvasBtn.addEventListener('click', () => {
+    clearCanvas();
+    updateStrokeCount(strokeManager.getStrokeCount());
+  });
   saveImageBtn.addEventListener('click', saveImage);
   document.addEventListener('keydown', (e) => {
     switch (e.key) {
@@ -163,6 +228,9 @@ function setupEventListeners() {
         break;
       case 'e': case 'E':
         if (e.ctrlKey || e.metaKey) { e.preventDefault(); eraserTool.click(); }
+        break;
+      case 'r': case 'R':
+        if (e.ctrlKey || e.metaKey) { e.preventDefault(); rectangleTool.click(); }
         break;
       case 'Delete': case 'Backspace':
         if (e.ctrlKey || e.metaKey) { e.preventDefault(); clearCanvas(); }
@@ -178,7 +246,9 @@ function init() {
   redrawViewport();
   setupEventListeners();
   updateToolInfo('Pen Tool');
-  console.log('Drawing app initialized with tiled infinite canvas.');
+  updateLayerSelect(getLayers(), getCurrentLayer());
+  updateStrokeCount(strokeManager.getStrokeCount());
+  console.log('Drawing app initialized with stroke-based objects, layers, and rectangle tool.');
 }
 
 window.addEventListener('DOMContentLoaded', init);
